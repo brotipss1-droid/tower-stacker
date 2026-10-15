@@ -16,6 +16,9 @@ public class Effects : MonoBehaviour
     private AudioClip _cut;
     private AudioClip _perfect;
     private AudioClip _gameOver;
+    private AudioClip _horn;
+    private AudioClip _gull;
+    private AudioSource _ambience;
 
     private void Awake()
     {
@@ -28,6 +31,11 @@ public class Effects : MonoBehaviour
         _cut = Tone("cut", 0.12f, 900f, 250f, 0.75f);
         _perfect = Tone("perfect", 0.28f, 523f, 523f, 0f);
         _gameOver = Tone("game over", 0.7f, 330f, 90f, 0.15f);
+
+        _ambience = gameObject.AddComponent<AudioSource>();
+        _ambience.playOnAwake = false;
+        _horn = Horn();
+        _gull = GullCry();
     }
 
     private void Update()
@@ -74,6 +82,64 @@ public class Effects : MonoBehaviour
     {
         _tones.pitch = 1f;
         _tones.PlayOneShot(_gameOver, 0.8f);
+    }
+
+    public void PlayHorn()
+    {
+        _ambience.pitch = Random.Range(0.95f, 1.05f);
+        _ambience.PlayOneShot(_horn, 0.35f);
+    }
+
+    public void PlayGull()
+    {
+        _ambience.pitch = Random.Range(0.9f, 1.15f);
+        _ambience.PlayOneShot(_gull, 0.25f);
+    }
+
+    /// <summary>A ferry horn: a low note with its first overtones, slow to start and to fade.</summary>
+    private static AudioClip Horn()
+    {
+        const int rate = 44100;
+        const float seconds = 1.1f;
+        int count = Mathf.CeilToInt(seconds * rate);
+        var data = new float[count];
+        for (int i = 0; i < count; i++)
+        {
+            float t = (float)i / rate;
+            float wobble = 1f + 0.004f * Mathf.Sin(t * 2f * Mathf.PI * 5f);
+            float w = 2f * Mathf.PI * 98f * wobble * t;
+            float wave = Mathf.Sin(w) + 0.55f * Mathf.Sin(2f * w) + 0.3f * Mathf.Sin(3f * w) + 0.15f * Mathf.Sin(4f * w);
+            float attack = Mathf.Clamp01(t / 0.12f);
+            float release = Mathf.Clamp01((seconds - t) / 0.35f);
+            data[i] = wave * attack * release * 0.35f;
+        }
+        var clip = AudioClip.Create("horn", count, 1, rate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
+    /// <summary>A seagull: two quick cries, each a high note sliding down.</summary>
+    private static AudioClip GullCry()
+    {
+        const int rate = 44100;
+        const float seconds = 0.32f;
+        int count = Mathf.CeilToInt(seconds * rate);
+        var data = new float[count];
+        float phase = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            float t = (float)i / rate;
+            float cry = t < 0.16f ? t / 0.14f : (t - 0.18f) / 0.14f;   // 0..1 inside each cry
+            bool inCry = cry >= 0f && cry <= 1f;
+            float hz = Mathf.Lerp(2300f, 1500f, Mathf.Clamp01(cry));
+            phase += 2f * Mathf.PI * hz / rate;
+            float env = inCry ? Mathf.Sin(Mathf.Clamp01(cry) * Mathf.PI) : 0f;
+            float wave = Mathf.Sin(phase) + 0.4f * Mathf.Sin(2f * phase);
+            data[i] = wave * env * 0.5f;
+        }
+        var clip = AudioClip.Create("gull", count, 1, rate, false);
+        clip.SetData(data, 0);
+        return clip;
     }
 
     /// <summary>

@@ -17,17 +17,6 @@ public class StackManager : MonoBehaviour
     public int comboGrowFrom = 3;        // perfects in a row before the block starts growing back
     public float comboGrow = 0.3f;       // width regained per perfect once the combo is going
 
-    [Header("Sky")]
-    public float blocksPerSky = 15f;     // how many blocks it takes to move to the next sky colour
-    public Color[] skyColors =
-    {
-        new Color(0.10f, 0.12f, 0.18f),  // night blue
-        new Color(0.24f, 0.13f, 0.30f),  // dusk purple
-        new Color(0.38f, 0.16f, 0.18f),  // last sunlight
-        new Color(0.08f, 0.21f, 0.27f),  // deep teal
-        new Color(0.03f, 0.04f, 0.10f),  // high and dark
-    };
-
     public enum State { Ready, Playing, GameOver }
     public State Current { get; private set; } = State.Ready;
     public int Score { get; private set; }
@@ -44,13 +33,27 @@ public class StackManager : MonoBehaviour
     private Block _moving;
     private float _slideTime;
     private int _direction = 1;
-    private float _hue;
+    private int _paletteIndex;
     private float _camY;
     private float _lastPlaceTime = -10f;
     private Camera _cam;
     private Effects _fx;
 
     private const string BestKey = "tower-stacker.best";
+
+    // Facade colours of the old wooden houses along the Bosphorus; the base is stone.
+    private static readonly Color StoneColor = new Color(0.56f, 0.55f, 0.52f);
+    private static readonly Color[] HousePalette =
+    {
+        new Color(0.93f, 0.87f, 0.74f),  // cream
+        new Color(0.80f, 0.42f, 0.33f),  // terracotta
+        new Color(0.88f, 0.68f, 0.35f),  // ochre
+        new Color(0.85f, 0.60f, 0.58f),  // dusty rose
+        new Color(0.60f, 0.70f, 0.55f),  // sage
+        new Color(0.45f, 0.55f, 0.70f),  // slate blue
+        new Color(0.95f, 0.94f, 0.90f),  // whitewash
+        new Color(0.55f, 0.38f, 0.28f),  // walnut
+    };
 
     private void Start()
     {
@@ -85,9 +88,6 @@ public class StackManager : MonoBehaviour
         _camY = Mathf.Lerp(_camY, targetY, Time.deltaTime * 4f);
         Vector2 shake = _fx != null ? _fx.ShakeOffset : Vector2.zero;
         _cam.transform.position = new Vector3(shake.x, _camY + shake.y, -10f);
-
-        // The sky slowly changes colour the higher the tower gets.
-        _cam.backgroundColor = Color.Lerp(_cam.backgroundColor, SkyFor(Score), Time.deltaTime * 2f);
     }
 
     private static bool Tapped()
@@ -106,13 +106,12 @@ public class StackManager : MonoBehaviour
         Combo = 0;
         NewBest = false;
         LastPerfect = false;
-        _hue = Random.value;
+        _paletteIndex = Random.Range(0, HousePalette.Length);
         _camY = 5f;
         _cam.transform.position = new Vector3(0f, _camY, -10f);
-        _cam.backgroundColor = SkyFor(0);
 
         // The base block the tower grows from.
-        _tower.Add(Block.Create("Base", 0f, 0f, startWidth, blockHeight, NextColor()));
+        _tower.Add(Block.Create("Base", 0f, 0f, startWidth, blockHeight, StoneColor, true));
         Current = State.Ready;
     }
 
@@ -210,16 +209,7 @@ public class StackManager : MonoBehaviour
 
     private Color NextColor()
     {
-        _hue = (_hue + 0.045f) % 1f;
-        return Color.HSVToRGB(_hue, 0.55f, 0.95f);
-    }
-
-    private Color SkyFor(int score)
-    {
-        if (skyColors == null || skyColors.Length == 0) return new Color(0.10f, 0.12f, 0.18f);
-        float pos = Mathf.Clamp(score / Mathf.Max(1f, blocksPerSky), 0f, skyColors.Length - 1);
-        int i = Mathf.Min(Mathf.FloorToInt(pos), skyColors.Length - 1);
-        int j = Mathf.Min(i + 1, skyColors.Length - 1);
-        return Color.Lerp(skyColors[i], skyColors[j], pos - i);
+        _paletteIndex = (_paletteIndex + 1) % HousePalette.Length;
+        return HousePalette[_paletteIndex];
     }
 }
