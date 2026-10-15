@@ -8,11 +8,15 @@ public class Block : MonoBehaviour
 {
     public float Width { get; private set; }
     public float Height { get; private set; }
+    public Color Color => _renderer.color;
 
     private SpriteRenderer _renderer;
     private bool _falling;
     private float _fallSpeed;
     private float _spin;
+    private float _punch;   // seconds left of the landing squash
+
+    private const float PunchDuration = 0.16f;
 
     private static Sprite _square;
 
@@ -42,6 +46,12 @@ public class Block : MonoBehaviour
         transform.position = p;
     }
 
+    /// <summary>Squash and stretch for a moment, as if the block just landed.</summary>
+    public void Punch()
+    {
+        _punch = PunchDuration;
+    }
+
     /// <summary>Turn this block into a piece that drops off the screen and disappears.</summary>
     public void Fall(float sideways)
     {
@@ -53,6 +63,15 @@ public class Block : MonoBehaviour
 
     private void Update()
     {
+        if (_punch > 0f)
+        {
+            _punch -= Time.deltaTime;
+            float t = Mathf.Clamp01(1f - _punch / PunchDuration);
+            float bump = Mathf.Sin(t * Mathf.PI) * 0.12f;
+            transform.localScale = new Vector3(Width * (1f + bump), Height * (1f - bump), 1f);
+            if (_punch <= 0f) transform.localScale = new Vector3(Width, Height, 1f);
+        }
+
         if (!_falling) return;
         _fallSpeed += 30f * Time.deltaTime;
         transform.position += Vector3.down * _fallSpeed * Time.deltaTime;
@@ -60,7 +79,7 @@ public class Block : MonoBehaviour
     }
 
     /// <summary>A 1x1 white sprite made in code, so the project needs no image files yet.</summary>
-    private static Sprite SquareSprite()
+    public static Sprite SquareSprite()
     {
         if (_square != null) return _square;
         var tex = new Texture2D(1, 1);

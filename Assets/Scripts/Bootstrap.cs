@@ -25,6 +25,7 @@ public static class Bootstrap
         cam.transform.position = new Vector3(0f, 5f, -10f);
 
         var game = new GameObject("Game");
+        game.AddComponent<Effects>();
         game.AddComponent<StackManager>();
         game.AddComponent<GameUI>();
     }
