@@ -27,6 +27,7 @@ public static class Bootstrap
         var game = new GameObject("Game");
         game.AddComponent<Effects>();
         game.AddComponent<StackManager>();
+        game.AddComponent<BosphorusScenery>();
         game.AddComponent<GameUI>();
     }
 }

@@ -18,8 +18,9 @@ If Unity complains that `Input` is not available, go to Edit > Project Settings 
 | --- | --- |
 | `Assets/Scripts/Bootstrap.cs` | Creates the camera and the game objects when the app starts. |
 | `Assets/Scripts/StackManager.cs` | The whole core loop: sliding block, tap to drop, cutting the overhang, score, game over, restart. The numbers under `Tuning` are the ones to play with. |
-| `Assets/Scripts/Block.cs` | One block: its size, colour, and how a cut-off piece falls away. |
-| `Assets/Scripts/Effects.cs` | Camera shake and the sounds. The sounds are tones generated in code, so there are no audio files yet. |
+| `Assets/Scripts/Block.cs` | One block, drawn as a floor of a Bosphorus house with trim and windows that light up at night; also how a cut-off piece falls away. |
+| `Assets/Scripts/BosphorusScenery.cs` | The theme: sky from morning to night, sun, moon, stars, clouds, the Istanbul skyline, the sea, a ferry and seagulls, all drawn from code. |
+| `Assets/Scripts/Effects.cs` | Camera shake and the sounds (drops, perfects, ferry horn, seagulls). All generated in code, so there are no audio files yet. |
 | `Assets/Scripts/Flash.cs` | The white flash that grows and fades on a perfect drop. |
 | `Assets/Scripts/GameUI.cs` | Score and prompts on screen. Temporary; replaced by a real UI in week 2. |
 
