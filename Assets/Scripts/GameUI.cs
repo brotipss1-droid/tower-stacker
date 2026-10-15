@@ -29,6 +29,16 @@ public class GameUI : MonoBehaviour
         _pop = Mathf.MoveTowards(_pop, 0f, Time.deltaTime * 4f);
     }
 
+    /// <summary>A label with a soft shadow so it reads on a bright morning sky too.</summary>
+    private static void Label(Rect rect, string text, GUIStyle style)
+    {
+        Color keep = style.normal.textColor;
+        style.normal.textColor = new Color(0f, 0f, 0f, 0.45f * keep.a);
+        GUI.Label(new Rect(rect.x + 2f, rect.y + 3f, rect.width, rect.height), text, style);
+        style.normal.textColor = keep;
+        GUI.Label(rect, text, style);
+    }
+
     private void OnGUI()
     {
         if (_big == null)
@@ -49,14 +59,14 @@ public class GameUI : MonoBehaviour
 
         // The score grows for a moment every time it changes.
         _big.fontSize = Mathf.RoundToInt(_bigSize * (1f + 0.3f * _pop));
-        GUI.Label(new Rect(0, h * 0.06f, w, 160), _game.Score.ToString(), _big);
+        Label(new Rect(0, h * 0.06f, w, 160), _game.Score.ToString(), _big);
         _big.fontSize = _bigSize;
-        GUI.Label(new Rect(0, h * 0.16f, w, 60), "best " + _game.Best, _small);
+        Label(new Rect(0, h * 0.16f, w, 60), "best " + _game.Best, _small);
 
         switch (_game.Current)
         {
             case StackManager.State.Ready:
-                GUI.Label(new Rect(0, h * 0.55f, w, 60), "tap to drop a block", _small);
+                Label(new Rect(0, h * 0.55f, w, 60), "tap to drop a block", _small);
                 break;
 
             case StackManager.State.Playing:
@@ -66,16 +76,16 @@ public class GameUI : MonoBehaviour
                     float fade = 1f - _game.PlacedAgo / 0.9f;
                     var c = _small.normal.textColor;
                     _small.normal.textColor = new Color(1f, 1f, 1f, fade);
-                    GUI.Label(new Rect(0, h * 0.22f, w, 60), text, _small);
+                    Label(new Rect(0, h * 0.22f, w, 60), text, _small);
                     _small.normal.textColor = c;
                 }
                 break;
 
             case StackManager.State.GameOver:
-                GUI.Label(new Rect(0, h * 0.5f, w, 100), "game over", _big);
+                Label(new Rect(0, h * 0.5f, w, 100), "game over", _big);
                 if (_game.NewBest)
-                    GUI.Label(new Rect(0, h * 0.6f, w, 60), "new best!", _small);
-                GUI.Label(new Rect(0, h * 0.66f, w, 60), "tap to try again", _small);
+                    Label(new Rect(0, h * 0.6f, w, 60), "new best!", _small);
+                Label(new Rect(0, h * 0.66f, w, 60), "tap to try again", _small);
                 break;
         }
     }
