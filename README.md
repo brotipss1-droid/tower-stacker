@@ -18,8 +18,10 @@ If Unity complains that `Input` is not available, go to Edit > Project Settings 
 | --- | --- |
 | `Assets/Scripts/Bootstrap.cs` | Creates the camera and the game objects when the app starts. |
 | `Assets/Scripts/StackManager.cs` | The whole core loop: sliding block, tap to drop, cutting the overhang, score, game over, restart. The numbers under `Tuning` are the ones to play with. |
-| `Assets/Scripts/Block.cs` | One block, drawn as a floor of a Bosphorus house with trim and windows that light up at night; also how a cut-off piece falls away. |
-| `Assets/Scripts/BosphorusScenery.cs` | The theme: sky from morning to night, sun, moon, stars, clouds, the Istanbul skyline, the sea, a ferry and seagulls, all drawn from code. |
+| `Assets/Scripts/Block.cs` | One block, drawn as a floor of a Bosphorus house: shaded edge, cornice with dentils, framed windows with sills that light up at night; also how a cut-off piece falls away. |
+| `Assets/Scripts/BosphorusScenery.cs` | The theme: sky from morning to night, sun, moon, stars, clouds, the Istanbul skyline with its lights and their reflection, the sea, the quay, a ferry with smoke and a wake, and seagulls. |
+| `Assets/Scripts/BosphorusArt.cs` | The artwork itself: the skyline in two depths (Blue Mosque, Hagia Sophia, Galata, Maiden's Tower, the Bosphorus Bridge, houses, trees), the ferry, the gull, clouds, sun, moon and quay, painted at start. |
+| `Assets/Scripts/PixelCanvas.cs` | A small painter that draws shapes into pixels and makes a sprite, so there are still no image files in the project. |
 | `Assets/Scripts/Effects.cs` | Camera shake and the sounds (drops, perfects, ferry horn, seagulls). All generated in code, so there are no audio files yet. |
 | `Assets/Scripts/Flash.cs` | The white flash that grows and fades on a perfect drop. |
 | `Assets/Scripts/GameUI.cs` | Score and prompts on screen. Temporary; replaced by a real UI in week 2. |

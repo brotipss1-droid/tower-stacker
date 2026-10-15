@@ -2,11 +2,13 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// The Bosphorus around the tower, all drawn from code: a sky that goes from
-/// morning to night as the tower grows, the sun setting and the moon rising,
-/// stars, clouds, the Istanbul skyline, the sea with a ferry, and seagulls.
-/// Everything near the tower is fixed in the world and scrolls away as the
-/// camera climbs; the sky, sun, moon and stars follow the camera.
+/// The Bosphorus around the tower: a sky that goes from morning to night as the
+/// tower grows, the sun setting and the moon rising, stars, clouds, the Istanbul
+/// skyline in three depths with its lights coming on at dusk and reflecting in the
+/// water, the stone quay, a ferry with smoke and a wake, and seagulls. All of the
+/// artwork is painted at start by <see cref="BosphorusArt"/>. Everything near the
+/// tower is fixed in the world and scrolls away as the camera climbs; the sky, sun,
+/// moon and stars follow the camera.
 /// </summary>
 public class BosphorusScenery : MonoBehaviour
 {
@@ -25,20 +27,42 @@ public class BosphorusScenery : MonoBehaviour
     private Camera _cam;
     private float _day;              // 0 = morning, 1 = night; eased towards the score
 
+    // sky
     private Transform _skyRoot;
     private SpriteRenderer _skyGradient;
     private SpriteRenderer _sun;
     private SpriteRenderer _moon;
     private readonly List<SpriteRenderer> _stars = new List<SpriteRenderer>();
-    private readonly List<SpriteRenderer> _silhouettes = new List<SpriteRenderer>();
-    private readonly List<SpriteRenderer> _seaParts = new List<SpriteRenderer>();
-    private readonly List<Transform> _waves = new List<Transform>();
-    private readonly List<SpriteRenderer> _clouds = new List<SpriteRenderer>();
-    private readonly List<Transform> _cloudRoots = new List<Transform>();
+
+    // city
+    private SpriteRenderer _far;
+    private SpriteRenderer _mid;
+    private SpriteRenderer _near;
+    private SpriteRenderer _lights;
+    private SpriteRenderer _reflection;
+
+    // sea
+    private SpriteRenderer _water;
+    private readonly List<SpriteRenderer> _glints = new List<SpriteRenderer>();
+    private readonly List<float> _glintSpeeds = new List<float>();
+    private readonly List<SpriteRenderer> _daylit = new List<SpriteRenderer>();   // painted things that just darken at night
+
+    // ferry
     private Transform _ferry;
+    private SpriteRenderer _ferryBody;
+    private SpriteRenderer _ferryLights;
+    private readonly List<SpriteRenderer> _wake = new List<SpriteRenderer>();
+    private int _ferryDir = 1;
     private bool _hornBlown;
+    private float _nextPuff;
+    private readonly List<Puff> _smoke = new List<Puff>();
+
+    // clouds and gulls
+    private readonly List<SpriteRenderer> _clouds = new List<SpriteRenderer>();
+    private readonly List<float> _cloudSpeeds = new List<float>();
     private float _nextGull;
     private readonly List<Gull> _gulls = new List<Gull>();
+    private Sprite[] _gullFrames;
 
     private static Sprite _circle;
     private static Sprite _gradient;
@@ -57,12 +81,18 @@ public class BosphorusScenery : MonoBehaviour
 
     private class Gull
     {
-        public Transform Root;
-        public Transform LeftWing;
-        public Transform RightWing;
+        public SpriteRenderer Renderer;
         public float Speed;
         public float Age;
         public float BaseY;
+        public float Flap;
+    }
+
+    private class Puff
+    {
+        public SpriteRenderer Renderer;
+        public float Age;
+        public float Drift;
     }
 
     private void Start()
@@ -73,7 +103,9 @@ public class BosphorusScenery : MonoBehaviour
         BuildSky();
         BuildSkyline();
         BuildSea();
+        BuildFerry();
         BuildClouds();
+        _gullFrames = new[] { BosphorusArt.Gull(0).ToSprite(), BosphorusArt.Gull(1).ToSprite(), BosphorusArt.Gull(2).ToSprite() };
         _nextGull = 2f;
     }
 
@@ -82,10 +114,12 @@ public class BosphorusScenery : MonoBehaviour
         float target = _game != null ? Mathf.Clamp01(_game.Score / Mathf.Max(1f, blocksToNight)) : 0f;
         _day = Mathf.MoveTowards(_day, target, Time.deltaTime * 0.25f);
         float night = Mathf.Clamp01((_day - 0.55f) / 0.45f);   // 0 by day, 1 at full night
+        float dusk = Mathf.Clamp01((_day - 0.4f) / 0.4f);      // the lights come on a little before full night
 
         Daylight = Mathf.Lerp(1f, 0.45f, night);
-        LitWindow = Color.Lerp(new Color(0.30f, 0.38f, 0.50f), new Color(1.0f, 0.85f, 0.45f), night);
+        LitWindow = Color.Lerp(new Color(0.30f, 0.38f, 0.50f), new Color(1.0f, 0.85f, 0.45f), dusk);
         DarkWindow = Color.Lerp(new Color(0.30f, 0.38f, 0.50f), new Color(0.12f, 0.12f, 0.18f), night);
+        Color lit = new Color(Daylight, Daylight, Daylight, 1f);
 
         // Sky: the camera clears to the horizon colour, the gradient sprite adds the zenith on top.
         Color horizon = Sample(Horizon, _day);
@@ -110,31 +144,45 @@ public class BosphorusScenery : MonoBehaviour
             s.color = c;
         }
 
-        // The city darkens into a silhouette, the sea gets deep and dark.
-        Color sil = Color.Lerp(new Color(0.52f, 0.60f, 0.72f), new Color(0.05f, 0.06f, 0.12f), Mathf.Clamp01(_day * 1.3f));
-        foreach (var r in _silhouettes) r.color = sil;
-        Color sea = Color.Lerp(new Color(0.20f, 0.45f, 0.62f), new Color(0.04f, 0.08f, 0.16f), _day);
-        foreach (var r in _seaParts) r.color = sea;
-        for (int i = 0; i < _waves.Count; i++)
-        {
-            var p = _waves[i].localPosition;
-            p.x = Mathf.Sin(Time.time * 0.4f + i * 1.7f) * 1.5f;
-            _waves[i].localPosition = p;
-        }
+        // The city in three depths: the far shore fades into the sky's haze, the near shore goes almost black at night.
+        float dark = Mathf.Clamp01(_day * 1.3f);
+        float sunset = Mathf.Clamp01(1f - Mathf.Abs(_day - 0.45f) * 5f) * 0.5f;
+        Color farDay = Color.Lerp(new Color(0.62f, 0.70f, 0.84f), horizon, 0.3f);
+        _far.color = Color.Lerp(farDay, new Color(0.11f, 0.13f, 0.24f), dark);
+        Color midDay = Color.Lerp(new Color(0.46f, 0.53f, 0.68f), new Color(0.46f, 0.36f, 0.46f), sunset);
+        _mid.color = Color.Lerp(midDay, new Color(0.07f, 0.08f, 0.16f), dark);
+        Color nearDay = Color.Lerp(new Color(0.27f, 0.31f, 0.44f), new Color(0.28f, 0.20f, 0.28f), sunset);
+        _near.color = Color.Lerp(nearDay, new Color(0.04f, 0.05f, 0.10f), dark);
+        _lights.color = new Color(1f, 0.85f, 0.5f, dusk * 0.95f);
+        _reflection.color = new Color(1f, 0.85f, 0.5f, dusk * 0.30f);
+        _reflection.transform.localScale = new Vector3(1f + 0.012f * Mathf.Sin(Time.time * 1.7f), -0.45f, 1f);
 
-        Color cloud = Color.Lerp(new Color(1f, 1f, 1f, 0.9f), new Color(0.25f, 0.22f, 0.32f, 0.8f), night);
-        cloud = Color.Lerp(cloud, new Color(1f, 0.75f, 0.70f, 0.9f), Mathf.Clamp01(1f - Mathf.Abs(_day - 0.45f) * 5f) * 0.6f);
-        foreach (var r in _clouds) r.color = cloud;
-        for (int i = 0; i < _cloudRoots.Count; i++)
+        // The sea gets deep and dark, with glints drifting on it.
+        _water.color = Color.Lerp(new Color(0.20f, 0.45f, 0.62f), new Color(0.04f, 0.08f, 0.16f), _day);
+        for (int i = 0; i < _glints.Count; i++)
         {
-            var p = _cloudRoots[i].position;
-            p.x += (0.15f + 0.05f * (i % 3)) * Time.deltaTime;
+            var p = _glints[i].transform.position;
+            p.x += _glintSpeeds[i] * Time.deltaTime;
+            if (p.x > 12f) p.x -= 24f;
+            if (p.x < -12f) p.x += 24f;
+            _glints[i].transform.position = p;
+            _glints[i].color = new Color(1f, 1f, 1f, Mathf.Lerp(0.22f, 0.12f, night));
+        }
+        foreach (var r in _daylit) r.color = lit;
+
+        Color cloud = Color.Lerp(new Color(1f, 1f, 1f, 0.95f), new Color(0.25f, 0.22f, 0.32f, 0.85f), night);
+        cloud = Color.Lerp(cloud, new Color(1f, 0.75f, 0.70f, 0.95f), Mathf.Clamp01(1f - Mathf.Abs(_day - 0.45f) * 5f) * 0.6f);
+        for (int i = 0; i < _clouds.Count; i++)
+        {
+            _clouds[i].color = cloud;
+            var p = _clouds[i].transform.position;
+            p.x += _cloudSpeeds[i] * Time.deltaTime;
             if (p.x > 16f) p.x = -16f;
-            _cloudRoots[i].position = p;
+            _clouds[i].transform.position = p;
         }
 
-        UpdateFerry();
-        UpdateGulls();
+        UpdateFerry(lit, dusk);
+        UpdateGulls(lit);
     }
 
     // ---------- sky ----------
@@ -146,10 +194,9 @@ public class BosphorusScenery : MonoBehaviour
         _skyGradient = NewSprite("Gradient", _skyRoot, GradientSprite(), -100);
         _skyGradient.transform.localScale = new Vector3(60f, 30f, 1f);
 
-        _sun = NewSprite("Sun", _skyRoot, CircleSprite(), -90);
-        _sun.transform.localScale = new Vector3(2.2f, 2.2f, 1f);
-        _moon = NewSprite("Moon", _skyRoot, CircleSprite(), -90);
-        _moon.transform.localScale = new Vector3(1.4f, 1.4f, 1f);
+        _sun = NewSprite("Sun", _skyRoot, BosphorusArt.Sun(1f).ToSprite(), -90);
+        _sun.transform.localScale = new Vector3(1.1f, 1.1f, 1f);
+        _moon = NewSprite("Moon", _skyRoot, BosphorusArt.Moon(0.7f).ToSprite(), -90);
 
         var rng = new System.Random(42);
         for (int i = 0; i < 45; i++)
@@ -171,55 +218,26 @@ public class BosphorusScenery : MonoBehaviour
     {
         var root = new GameObject("Skyline").transform;
 
-        // The far shore on both sides, low and wide.
-        Box(root, -14f, -0.5f, 14f, 1.4f);
-        Box(root, 14f, -0.5f, 14f, 1.1f);
+        // Paint the three depths first; the lights layer collects every window they placed.
+        var far = BosphorusArt.FarLayer();
+        var mid = BosphorusArt.MidLayer();
+        var near = BosphorusArt.NearLayer();
+        var lights = BosphorusArt.LightsLayer();
 
-        // A mosque on the left: base, dome, two minarets with their balconies.
-        Mosque(root, -8.5f, 0f, 3.2f);
-        // A smaller one far right.
-        Mosque(root, 10.5f, 0f, 2.2f);
+        _far = NewSprite("Far shore", root, far.ToSprite(), -63);
+        _far.transform.position = far.Center;
+        _mid = NewSprite("Middle shore", root, mid.ToSprite(), -62);
+        _mid.transform.position = mid.Center;
+        _near = NewSprite("Near shore", root, near.ToSprite(), -60);
+        _near.transform.position = near.Center;
+        _lights = NewSprite("City lights", root, lights.ToSprite(), -59);
+        _lights.transform.position = lights.Center;
 
-        // Galata Tower: a tall cylinder, a wider gallery and a cone-ish cap.
-        Box(root, -4.2f, 1.0f, 0.9f, 3.6f);
-        Box(root, -4.2f, 2.9f, 1.2f, 0.35f);
-        Dot(root, -4.2f, 3.3f, 0.8f);
-        Box(root, -4.2f, 3.8f, 0.3f, 0.8f);
-
-        // Houses climbing the hill between the landmarks.
-        var rng = new System.Random(3);
-        for (float x = -7f; x < -4.8f; x += 0.55f) Box(root, x, 0.1f, 0.5f, 0.6f + (float)rng.NextDouble() * 0.7f);
-        for (float x = -3.3f; x < 9f; x += 0.6f) Box(root, x, 0.1f, 0.55f, 0.5f + (float)rng.NextDouble() * 0.9f);
-
-        // Maiden's Tower on its islet, out in the water to the right.
-        Box(root, 7.5f, -0.2f, 1.6f, 0.35f);
-        Box(root, 7.5f, 0.3f, 0.7f, 0.8f);
-        Box(root, 7.5f, 0.85f, 0.35f, 0.5f);
-        Dot(root, 7.5f, 1.15f, 0.3f);
-
-        // The bridge in the distance behind everything: deck, two towers, hangers.
-        Box(root, 3f, 1.6f, 9f, 0.12f);
-        Box(root, 0.5f, 1.8f, 0.25f, 2.2f);
-        Box(root, 5.5f, 1.8f, 0.25f, 2.2f);
-        for (float x = 1.2f; x < 5.2f; x += 0.5f)
-        {
-            float h = 0.3f + Mathf.Abs(x - 3f) * 0.45f;
-            Box(root, x, 1.65f + h / 2f, 0.04f, h);
-        }
-    }
-
-    private void Mosque(Transform root, float x, float y, float size)
-    {
-        Box(root, x, y + size * 0.25f, size, size * 0.5f);
-        Dot(root, x, y + size * 0.5f, size * 0.8f);
-        Box(root, x, y + size * 0.95f, size * 0.07f, size * 0.25f);
-        for (int side = -1; side <= 1; side += 2)
-        {
-            float mx = x + side * size * 0.62f;
-            Box(root, mx, y + size * 0.75f, size * 0.10f, size * 1.5f);
-            Box(root, mx, y + size * 1.1f, size * 0.18f, size * 0.06f);
-            Box(root, mx, y + size * 1.55f, size * 0.06f, size * 0.2f);
-        }
+        // The same lights mirrored in the water below the sea line, squashed and faint.
+        _reflection = NewSprite("Reflection", root, _lights.sprite, -48);
+        float mirroredCenter = BosphorusArt.Sea - (lights.Center.y - BosphorusArt.Sea) * 0.45f;
+        _reflection.transform.position = new Vector3(0f, mirroredCenter, 0f);
+        _reflection.transform.localScale = new Vector3(1f, -0.45f, 1f);
     }
 
     // ---------- sea ----------
@@ -228,72 +246,115 @@ public class BosphorusScenery : MonoBehaviour
     {
         var root = new GameObject("Sea").transform;
 
-        var water = NewSprite("Water", root, Block.SquareSprite(), -50);
-        water.transform.localPosition = new Vector3(0f, -15.35f, 0f);
-        water.transform.localScale = new Vector3(80f, 30f, 1f);
-        _seaParts.Add(water);
+        _water = NewSprite("Water", root, Block.SquareSprite(), -50);
+        _water.transform.localPosition = new Vector3(0f, BosphorusArt.Sea - 15f, 0f);
+        _water.transform.localScale = new Vector3(80f, 30f, 1f);
 
-        for (int i = 0; i < 6; i++)
+        // Glints: short bright streaks that drift across the water in two bands.
+        var glintSprite = GlintSprite();
+        for (int band = 0; band < 2; band++)
         {
-            var wave = NewSprite("Wave", root, Block.SquareSprite(), -49);
-            wave.transform.localPosition = new Vector3(0f, -0.6f - i * 0.5f, 0f);
-            wave.transform.localScale = new Vector3(3f + i * 2f, 0.05f, 1f);
-            wave.color = new Color(1f, 1f, 1f, 0.18f);
-            _waves.Add(wave.transform);
+            for (int i = 0; i < 3; i++)
+            {
+                var g = NewSprite("Glints", root, glintSprite, -49);
+                float y = band == 0 ? BosphorusArt.Sea - 0.55f : BosphorusArt.Sea - 1.35f;
+                g.transform.position = new Vector3(-8f + i * 8f, y, 0f);
+                g.transform.localScale = band == 0 ? new Vector3(1f, 1f, 1f) : new Vector3(1.3f, 1.4f, 1f);
+                _glints.Add(g);
+                _glintSpeeds.Add(band == 0 ? 0.25f : -0.18f);
+            }
         }
 
-        // The stone pier the tower stands on, with two legs into the water.
-        float pierWidth = _game != null ? _game.startWidth + 0.6f : 4.6f;
-        var pier = NewSprite("Pier", root, Block.SquareSprite(), -20);
-        pier.transform.localPosition = new Vector3(0f, -0.65f, 0f);
-        pier.transform.localScale = new Vector3(pierWidth, 0.6f, 1f);
-        pier.color = new Color(0.42f, 0.40f, 0.38f);
-        for (int side = -1; side <= 1; side += 2)
-        {
-            var leg = NewSprite("Pier leg", root, Block.SquareSprite(), -45);
-            leg.transform.localPosition = new Vector3(side * (pierWidth / 2f - 0.4f), -1.6f, 0f);
-            leg.transform.localScale = new Vector3(0.35f, 1.6f, 1f);
-            leg.color = new Color(0.30f, 0.28f, 0.27f);
-        }
-
-        // The ferry: hull, cabin, chimney.
-        _ferry = new GameObject("Ferry").transform;
-        _ferry.SetParent(root, false);
-        _ferry.position = new Vector3(-14f, -0.75f, 0f);
-        var hull = NewSprite("Hull", _ferry, Block.SquareSprite(), -46);
-        hull.transform.localScale = new Vector3(2.4f, 0.35f, 1f);
-        hull.color = new Color(0.95f, 0.95f, 0.92f);
-        var stripe = NewSprite("Stripe", _ferry, Block.SquareSprite(), -45);
-        stripe.transform.localPosition = new Vector3(0f, -0.1f, 0f);
-        stripe.transform.localScale = new Vector3(2.4f, 0.08f, 1f);
-        stripe.color = new Color(0.15f, 0.25f, 0.45f);
-        var cabin = NewSprite("Cabin", _ferry, Block.SquareSprite(), -45);
-        cabin.transform.localPosition = new Vector3(0.1f, 0.33f, 0f);
-        cabin.transform.localScale = new Vector3(1.6f, 0.32f, 1f);
-        cabin.color = new Color(0.95f, 0.95f, 0.92f);
-        var chimney = NewSprite("Chimney", _ferry, Block.SquareSprite(), -44);
-        chimney.transform.localPosition = new Vector3(-0.3f, 0.65f, 0f);
-        chimney.transform.localScale = new Vector3(0.18f, 0.35f, 1f);
-        chimney.color = new Color(0.85f, 0.70f, 0.20f);
+        // The stone quay the tower stands on.
+        float quayWidth = _game != null ? _game.startWidth + 0.6f : 4.6f;
+        var quay = BosphorusArt.Quay(quayWidth);
+        var q = NewSprite("Quay", root, quay.ToSprite(), -20);
+        q.transform.position = new Vector3(0f, BosphorusArt.Sea + quay.Center.y, 0f);
+        _daylit.Add(q);
     }
 
-    private void UpdateFerry()
+    private void BuildFerry()
+    {
+        _ferry = new GameObject("Ferry").transform;
+        _ferry.position = new Vector3(-16f, BosphorusArt.Sea - 0.02f, 0f);
+
+        PixelCanvas lights;
+        var body = BosphorusArt.Ferry(out lights);
+        _ferryBody = NewSprite("Hull", _ferry, body.ToSprite(), -46);
+        _ferryBody.transform.localPosition = body.Center;
+        _ferryLights = NewSprite("Windows", _ferry, lights.ToSprite(), -45);
+        _ferryLights.transform.localPosition = lights.Center;
+        _daylit.Add(_ferryBody);
+
+        // Foam at the stern and along the hull.
+        for (int i = 0; i < 3; i++)
+        {
+            var w = NewSprite("Wake", _ferry, CircleSprite(), -47);
+            w.transform.localPosition = new Vector3(-1.5f - i * 0.45f, -0.08f, 0f);
+            w.transform.localScale = new Vector3(0.7f - i * 0.12f, 0.10f, 1f);
+            w.color = new Color(1f, 1f, 1f, 0.55f - i * 0.15f);
+            _wake.Add(w);
+        }
+    }
+
+    private void UpdateFerry(Color lit, float dusk)
     {
         var p = _ferry.position;
-        p.x += ferrySpeed * Time.deltaTime;
-        p.y = -0.75f + Mathf.Sin(Time.time * 1.3f) * 0.03f;
-        if (p.x > 16f)
+        p.x += ferrySpeed * _ferryDir * Time.deltaTime;
+        p.y = BosphorusArt.Sea - 0.02f + Mathf.Sin(Time.time * 1.3f) * 0.025f;
+        if (Mathf.Abs(p.x) > 16f)
         {
-            p.x = -16f;
+            // Turn round for the next crossing, so the bow always leads.
+            _ferryDir = -_ferryDir;
+            p.x = -16f * _ferryDir;
             _hornBlown = false;
+            _ferryBody.flipX = _ferryDir < 0;
+            _ferryLights.flipX = _ferryDir < 0;
+            foreach (var w in _wake)
+            {
+                var wp = w.transform.localPosition;
+                wp.x = -Mathf.Abs(wp.x) * _ferryDir;
+                w.transform.localPosition = wp;
+            }
         }
         _ferry.position = p;
+        _ferry.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(Time.time * 1.1f) * 1.2f);
+        _ferryLights.color = new Color(1f, 0.85f, 0.5f, dusk);
 
         // One horn per crossing, only while the sea is still on screen.
-        if (!_hornBlown && p.x > -6f && _cam.transform.position.y < 12f)
+        if (!_hornBlown && p.x * _ferryDir > -6f && _cam.transform.position.y < 12f)
         {
             _hornBlown = true;
             if (_fx != null) _fx.PlayHorn();
+        }
+
+        // Smoke from the funnel: puffs that rise, drift back and fade.
+        _nextPuff -= Time.deltaTime;
+        if (_nextPuff <= 0f)
+        {
+            _nextPuff = 0.45f;
+            var r = NewSprite("Smoke", null, CircleSprite(), -44);
+            r.transform.position = _ferry.position + new Vector3(0.02f * _ferryDir, 1.32f, 0f);
+            _smoke.Add(new Puff { Renderer = r, Drift = -_ferryDir * 0.35f });
+        }
+        for (int i = _smoke.Count - 1; i >= 0; i--)
+        {
+            var s = _smoke[i];
+            s.Age += Time.deltaTime;
+            float t = s.Age / 2.2f;
+            if (t >= 1f)
+            {
+                Destroy(s.Renderer.gameObject);
+                _smoke.RemoveAt(i);
+                continue;
+            }
+            var sp = s.Renderer.transform.position;
+            sp.x += s.Drift * Time.deltaTime;
+            sp.y += 0.45f * Time.deltaTime;
+            s.Renderer.transform.position = sp;
+            float size = 0.12f + 0.45f * t;
+            s.Renderer.transform.localScale = new Vector3(size, size, 1f);
+            s.Renderer.color = new Color(0.9f * lit.r, 0.9f * lit.g, 0.9f * lit.b, 0.45f * (1f - t));
         }
     }
 
@@ -302,28 +363,28 @@ public class BosphorusScenery : MonoBehaviour
     private void BuildClouds()
     {
         var rng = new System.Random(11);
+        var shapes = new[]
+        {
+            BosphorusArt.Cloud(rng, 2.8f, 1.0f).ToSprite(),
+            BosphorusArt.Cloud(rng, 2.0f, 0.8f).ToSprite(),
+            BosphorusArt.Cloud(rng, 3.6f, 1.1f).ToSprite(),
+        };
         for (int i = 0; i < 10; i++)
         {
-            var root = new GameObject("Cloud").transform;
+            var c = NewSprite("Cloud", null, shapes[i % shapes.Length], -80);
             float x = (float)rng.NextDouble() * 28f - 14f;
             float y = 7f + (float)rng.NextDouble() * 40f;
-            root.position = new Vector3(x, y, 0f);
-            float size = 0.8f + (float)rng.NextDouble() * 0.8f;
-            for (int k = -1; k <= 1; k++)
-            {
-                var puff = NewSprite("Puff", root, CircleSprite(), -80);
-                float s = size * (k == 0 ? 1.3f : 1f);
-                puff.transform.localPosition = new Vector3(k * size * 0.8f, k == 0 ? size * 0.15f : 0f, 0f);
-                puff.transform.localScale = new Vector3(s, s * 0.7f, 1f);
-                _clouds.Add(puff);
-            }
-            _cloudRoots.Add(root);
+            c.transform.position = new Vector3(x, y, 0f);
+            float size = 0.7f + (float)rng.NextDouble() * 0.6f;
+            c.transform.localScale = new Vector3(size, size, 1f);
+            _clouds.Add(c);
+            _cloudSpeeds.Add(0.12f + 0.05f * (i % 3));
         }
     }
 
     // ---------- seagulls ----------
 
-    private void UpdateGulls()
+    private void UpdateGulls(Color lit)
     {
         _nextGull -= Time.deltaTime;
         if (_nextGull <= 0f)
@@ -336,16 +397,21 @@ public class BosphorusScenery : MonoBehaviour
         {
             var g = _gulls[i];
             g.Age += Time.deltaTime;
-            var p = g.Root.position;
+            var p = g.Renderer.transform.position;
             p.x += g.Speed * Time.deltaTime;
             p.y = g.BaseY + Mathf.Sin(g.Age * 1.5f) * 0.3f;
-            g.Root.position = p;
-            float flap = Mathf.Sin(g.Age * 9f) * 25f;
-            g.LeftWing.localRotation = Quaternion.Euler(0f, 0f, 20f + flap);
-            g.RightWing.localRotation = Quaternion.Euler(0f, 0f, -20f - flap);
+            g.Renderer.transform.position = p;
+
+            // Flap: wings up, level, down, level, with a glide now and then.
+            float cycle = Mathf.Sin(g.Age * g.Flap);
+            bool gliding = Mathf.Sin(g.Age * 0.7f) > 0.6f;
+            int frame = gliding ? 1 : cycle > 0.33f ? 0 : cycle < -0.33f ? 2 : 1;
+            g.Renderer.sprite = _gullFrames[frame];
+            g.Renderer.color = lit;
+
             if (Mathf.Abs(p.x) > 12f)
             {
-                Destroy(g.Root.gameObject);
+                Destroy(g.Renderer.gameObject);
                 _gulls.RemoveAt(i);
             }
         }
@@ -355,57 +421,29 @@ public class BosphorusScenery : MonoBehaviour
     {
         float camY = _cam.transform.position.y;
         float dir = Random.value < 0.5f ? 1f : -1f;
+        var r = NewSprite("Seagull", null, _gullFrames[1], -70);
         var g = new Gull
         {
-            Root = new GameObject("Seagull").transform,
+            Renderer = r,
             Speed = dir * Random.Range(1.8f, 3f),
             BaseY = camY + Random.Range(-3f, 6f),
+            Flap = Random.Range(7f, 10f),
         };
-        g.Root.position = new Vector3(-11f * dir, g.BaseY, 0f);
+        r.transform.position = new Vector3(-11f * dir, g.BaseY, 0f);
         float scale = Random.Range(0.6f, 1f);
-        g.Root.localScale = new Vector3(scale, scale, 1f);
-
-        g.LeftWing = Wing(g.Root, -0.14f);
-        g.RightWing = Wing(g.Root, 0.14f);
+        r.transform.localScale = new Vector3(scale, scale, 1f);
+        r.flipX = dir < 0f;
         _gulls.Add(g);
 
         if (_fx != null && Random.value < 0.35f) _fx.PlayGull();
     }
 
-    private static Transform Wing(Transform root, float x)
-    {
-        var pivot = new GameObject("Wing").transform;
-        pivot.SetParent(root, false);
-        pivot.localPosition = new Vector3(x, 0f, 0f);
-        var r = NewSprite("Feather", pivot, Block.SquareSprite(), -70);
-        r.transform.localPosition = new Vector3(x, 0f, 0f);
-        r.transform.localScale = new Vector3(0.3f, 0.05f, 1f);
-        r.color = new Color(0.95f, 0.95f, 0.95f);
-        return pivot;
-    }
-
     // ---------- helpers ----------
-
-    private void Box(Transform root, float x, float y, float w, float h)
-    {
-        var r = NewSprite("Shape", root, Block.SquareSprite(), -60);
-        r.transform.localPosition = new Vector3(x, y, 0f);
-        r.transform.localScale = new Vector3(w, h, 1f);
-        _silhouettes.Add(r);
-    }
-
-    private void Dot(Transform root, float x, float y, float diameter)
-    {
-        var r = NewSprite("Dome", root, CircleSprite(), -60);
-        r.transform.localPosition = new Vector3(x, y, 0f);
-        r.transform.localScale = new Vector3(diameter, diameter, 1f);
-        _silhouettes.Add(r);
-    }
 
     private static SpriteRenderer NewSprite(string name, Transform parent, Sprite sprite, int order)
     {
         var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
+        if (parent != null) go.transform.SetParent(parent, false);
         var r = go.AddComponent<SpriteRenderer>();
         r.sprite = sprite;
         r.sortingOrder = order;
@@ -421,7 +459,7 @@ public class BosphorusScenery : MonoBehaviour
     }
 
     /// <summary>A soft-edged white disc, one unit across.</summary>
-    private static Sprite CircleSprite()
+    public static Sprite CircleSprite()
     {
         if (_circle != null) return _circle;
         const int size = 64;
@@ -456,5 +494,20 @@ public class BosphorusScenery : MonoBehaviour
         tex.Apply();
         _gradient = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
         return _gradient;
+    }
+
+    /// <summary>Eight units of short white streaks, the way light catches small waves.</summary>
+    private static Sprite GlintSprite()
+    {
+        var c = new PixelCanvas(8f, 0.8f, 32f, -4f, -0.4f);
+        var rng = new System.Random(19);
+        for (int i = 0; i < 70; i++)
+        {
+            float x = (float)rng.NextDouble() * 7.6f - 3.8f;
+            float y = (float)rng.NextDouble() * 0.7f - 0.35f;
+            float w = 0.12f + (float)rng.NextDouble() * 0.5f;
+            c.Rect(x, y, w, 0.03f, new Color(1f, 1f, 1f, 0.6f + 0.4f * (float)rng.NextDouble()));
+        }
+        return c.ToSprite();
     }
 }
