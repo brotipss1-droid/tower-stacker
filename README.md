@@ -2,10 +2,10 @@
 
 The first mobile game of Gaming Company's Mobile Studio (Murat and Kerem). Blocks slide across the screen; tap to drop one on the tower. The overhang is cut off, so every miss makes the next block narrower, until it is too thin to land. One thumb, portrait, sessions under three minutes.
 
-## Open the project (Kerem's Mac, Unity 6)
+## Open the project (Kerem's Mac, Unity 6.6)
 
 1. Clone this repository, or download it as a zip and unzip it.
-2. In Unity Hub click **Add** and choose the `tower-stacker` folder. If Hub says the project uses a different Unity version, pick your installed Unity 6 and accept the upgrade.
+2. In Unity Hub, under Installs, install **Unity 6000.6.6f1** (Unity 6.6) with the **iOS Build Support** module. Then click **Add** and choose the `tower-stacker` folder. The project is pinned to 6000.6.6f1; if Hub offers a newer 6.6 patch, accept the upgrade.
 3. Open the project. Unity creates the `Library` folder on first open; this takes a few minutes.
 4. Open any scene (File > New Scene is fine) and press **Play**. The game builds itself from code, so there is no scene to set up.
 5. For the phone preview: Edit > Project Settings > Player, set the default orientation to Portrait, then in the Game view choose a portrait resolution such as 1080x1920.
