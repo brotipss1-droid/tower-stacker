@@ -14,25 +14,48 @@ public class StackManager : MonoBehaviour
     public float startSpeed = 5f;        // units per second
     public float speedPerBlock = 0.12f;  // speed added for every block placed
     public float perfectTolerance = 0.12f;
+    public int comboGrowFrom = 3;        // perfects in a row before the block starts growing back
+    public float comboGrow = 0.3f;       // width regained per perfect once the combo is going
+
+    [Header("Sky")]
+    public float blocksPerSky = 15f;     // how many blocks it takes to move to the next sky colour
+    public Color[] skyColors =
+    {
+        new Color(0.10f, 0.12f, 0.18f),  // night blue
+        new Color(0.24f, 0.13f, 0.30f),  // dusk purple
+        new Color(0.38f, 0.16f, 0.18f),  // last sunlight
+        new Color(0.08f, 0.21f, 0.27f),  // deep teal
+        new Color(0.03f, 0.04f, 0.10f),  // high and dark
+    };
 
     public enum State { Ready, Playing, GameOver }
     public State Current { get; private set; } = State.Ready;
     public int Score { get; private set; }
     public int Best { get; private set; }
     public int Combo { get; private set; }
+    public bool NewBest { get; private set; }
+
+    /// <summary>True when the most recent drop was a perfect one.</summary>
+    public bool LastPerfect { get; private set; }
+    /// <summary>Seconds since the last block was placed.</summary>
+    public float PlacedAgo => Time.time - _lastPlaceTime;
 
     private readonly List<Block> _tower = new List<Block>();
     private Block _moving;
     private float _slideTime;
     private int _direction = 1;
     private float _hue;
+    private float _camY;
+    private float _lastPlaceTime = -10f;
     private Camera _cam;
+    private Effects _fx;
 
     private const string BestKey = "tower-stacker.best";
 
     private void Start()
     {
         _cam = Camera.main;
+        _fx = GetComponent<Effects>();
         Best = PlayerPrefs.GetInt(BestKey, 0);
         Application.targetFrameRate = 60;
         ResetGame();
@@ -57,11 +80,14 @@ public class StackManager : MonoBehaviour
             }
         }
 
-        // Camera follows the tower upwards, keeping the top block in view.
-        float targetY = TowerTop() + 2.5f;
-        var camPos = _cam.transform.position;
-        camPos.y = Mathf.Lerp(camPos.y, Mathf.Max(5f, targetY), Time.deltaTime * 4f);
-        _cam.transform.position = camPos;
+        // Camera follows the tower upwards, keeping the top block in view, plus any shake.
+        float targetY = Mathf.Max(5f, TowerTop() + 2.5f);
+        _camY = Mathf.Lerp(_camY, targetY, Time.deltaTime * 4f);
+        Vector2 shake = _fx != null ? _fx.ShakeOffset : Vector2.zero;
+        _cam.transform.position = new Vector3(shake.x, _camY + shake.y, -10f);
+
+        // The sky slowly changes colour the higher the tower gets.
+        _cam.backgroundColor = Color.Lerp(_cam.backgroundColor, SkyFor(Score), Time.deltaTime * 2f);
     }
 
     private static bool Tapped()
@@ -78,8 +104,12 @@ public class StackManager : MonoBehaviour
         _moving = null;
         Score = 0;
         Combo = 0;
+        NewBest = false;
+        LastPerfect = false;
         _hue = Random.value;
-        _cam.transform.position = new Vector3(0f, 5f, -10f);
+        _camY = 5f;
+        _cam.transform.position = new Vector3(0f, _camY, -10f);
+        _cam.backgroundColor = SkyFor(0);
 
         // The base block the tower grows from.
         _tower.Add(Block.Create("Base", 0f, 0f, startWidth, blockHeight, NextColor()));
@@ -117,32 +147,57 @@ public class StackManager : MonoBehaviour
             // Perfect drop: snap to the centre, keep the full width, build a combo.
             _moving.SetX(topX);
             Combo++;
+            LastPerfect = true;
+
+            // A long combo earns some width back, so a careful player can recover.
+            if (Combo >= comboGrowFrom && top.Width < startWidth)
+                _moving.SetSize(Mathf.Min(startWidth, top.Width + comboGrow), blockHeight);
+
+            Flash.Spawn(_moving.transform.position, _moving.Width, _moving.Height);
+            if (_fx != null) _fx.PlayPerfect(Combo);
         }
         else
         {
             Combo = 0;
+            LastPerfect = false;
             // Keep the overlapping part, cut the rest off and let it fall.
             float keptCenter = topX + dx / 2f;
             float cutWidth = Mathf.Abs(dx);
             float cutCenter = x + Mathf.Sign(dx) * (overlap / 2f);
-            var piece = Block.Create("Cut", cutCenter, _moving.transform.position.y, cutWidth, blockHeight, _moving.GetComponent<SpriteRenderer>().color);
+            var piece = Block.Create("Cut", cutCenter, _moving.transform.position.y, cutWidth, blockHeight, _moving.Color);
             piece.Fall(Mathf.Sign(dx));
             _moving.SetSize(overlap, blockHeight);
             _moving.SetX(keptCenter);
+
+            if (_fx != null)
+            {
+                _fx.PlayCut();
+                _fx.Shake(0.08f + Mathf.Min(cutWidth, 2f) * 0.08f);
+            }
         }
+
+        _moving.Punch();
+        if (_fx != null) _fx.PlayPlace();
 
         _tower.Add(_moving);
         _moving = null;
         Score++;
+        _lastPlaceTime = Time.time;
         SpawnMoving();
     }
 
     private void GameOver()
     {
         Current = State.GameOver;
+        if (_fx != null)
+        {
+            _fx.Shake(0.45f);
+            _fx.PlayGameOver();
+        }
         if (Score > Best)
         {
             Best = Score;
+            NewBest = Score > 0;
             PlayerPrefs.SetInt(BestKey, Best);
             PlayerPrefs.Save();
         }
@@ -157,5 +212,14 @@ public class StackManager : MonoBehaviour
     {
         _hue = (_hue + 0.045f) % 1f;
         return Color.HSVToRGB(_hue, 0.55f, 0.95f);
+    }
+
+    private Color SkyFor(int score)
+    {
+        if (skyColors == null || skyColors.Length == 0) return new Color(0.10f, 0.12f, 0.18f);
+        float pos = Mathf.Clamp(score / Mathf.Max(1f, blocksPerSky), 0f, skyColors.Length - 1);
+        int i = Mathf.Min(Mathf.FloorToInt(pos), skyColors.Length - 1);
+        int j = Mathf.Min(i + 1, skyColors.Length - 1);
+        return Color.Lerp(skyColors[i], skyColors[j], pos - i);
     }
 }
